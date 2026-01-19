@@ -22,17 +22,18 @@ var MistralKey = os.Getenv("MISTRAL_API_KEY")
 
 // --- COULEURS ---
 const (
-	Reset  = "\033[0m"
-	Cyan   = "\033[36m"
-	Dim    = "\033[2m"
-	Bold   = "\033[1m"
-	Red    = "\033[31m"
-	Green  = "\033[32m"
-	Blue   = "\033[34m" // Ajouté
-	Yellow = "\033[33m" // Ajouté
+	Reset   = "\033[0m"
+	Cyan    = "\033[36m"
+	Dim     = "\033[2m"
+	Bold    = "\033[1m"
+	Red     = "\033[31m"
+	Green   = "\033[32m"
+	Blue    = "\033[34m"
+	Yellow  = "\033[33m"
+	Magenta = "\033[35m"
 )
 
-// --- STRUCTS (STREAMING COMPATIBLE) ---
+// --- STRUCTS ---
 
 type ToolCall struct {
 	ID       string `json:"id"`
@@ -70,7 +71,7 @@ type RequestBody struct {
 	Stream      bool          `json:"stream"`
 }
 
-// --- TOOLS ---
+// --- OUTILS ---
 
 func toolRead(args map[string]interface{}) string {
 	path, ok := args["path"].(string)
@@ -109,8 +110,6 @@ func toolGlob(args map[string]interface{}) string {
 	return strings.Join(matches, "\n")
 }
 
-// --- LOGIC ---
-
 func getTools() []interface{} {
 	return []interface{}{
 		map[string]interface{}{"type": "function", "function": map[string]interface{}{"name": "read", "description": "Read file", "parameters": map[string]interface{}{"type": "object", "properties": map[string]interface{}{"path": map[string]string{"type": "string"}}, "required": []string{"path"}}}},
@@ -119,6 +118,8 @@ func getTools() []interface{} {
 		map[string]interface{}{"type": "function", "function": map[string]interface{}{"name": "glob", "description": "List files *", "parameters": map[string]interface{}{"type": "object", "properties": map[string]interface{}{"pat": map[string]string{"type": "string"}}, "required": []string{"pat"}}}},
 	}
 }
+
+// --- MOTEUR IA (STREAMING) ---
 
 func callMistralStream(messages []Message) (string, []ToolCall, error) {
 	reqBody := RequestBody{
@@ -129,67 +130,98 @@ func callMistralStream(messages []Message) (string, []ToolCall, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+MistralKey)
 
-	// Utilisation de 'time' ici pour éviter l'erreur d'import
 	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil { return "", nil, err }
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		return "", nil, fmt.Errorf("API Error %s", resp.Status)
-	}
+	if resp.StatusCode != 200 { return "", nil, fmt.Errorf("API Error %s", resp.Status) }
 
 	reader := bufio.NewReader(resp.Body)
 	fullContent := ""
 	var toolCalls []ToolCall
 	
-	currentToolID := ""
-	currentToolName := ""
-	currentToolArgs := ""
-
-	fmt.Printf("%s⏺ %s", Cyan, Reset)
+	currentToolID, currentToolName, currentToolArgs := "", "", ""
+	fmt.Printf("%s", Magenta) // Pensée en violet
 
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil { break }
-		
 		line = strings.TrimSpace(line)
 		if !strings.HasPrefix(line, "data: ") { continue }
 		if line == "data: [DONE]" { break }
 		
-		jsonPart := line[6:]
 		var chunk StreamResponse
-		json.Unmarshal([]byte(jsonPart), &chunk)
+		json.Unmarshal([]byte(line[6:]), &chunk)
 		
 		if len(chunk.Choices) > 0 {
 			delta := chunk.Choices[0].Delta
-			
 			if delta.Content != "" {
 				fmt.Print(delta.Content)
 				fullContent += delta.Content
 			}
-
 			if len(delta.ToolCalls) > 0 {
 				tc := delta.ToolCalls[0]
 				if tc.ID != "" {
 					if currentToolID != "" {
 						toolCalls = append(toolCalls, ToolCall{ID: currentToolID, Type: "function", Function: struct{Name string "json:\"name\""; Arguments string "json:\"arguments\""}{Name: currentToolName, Arguments: currentToolArgs}})
 					}
-					currentToolID = tc.ID
-					currentToolName = tc.Function.Name
-					currentToolArgs = ""
+					currentToolID = tc.ID; currentToolName = tc.Function.Name; currentToolArgs = ""
 				}
 				currentToolArgs += tc.Function.Arguments
 			}
 		}
 	}
-	fmt.Println()
+	fmt.Printf("%s\n", Reset)
 
 	if currentToolID != "" {
 		toolCalls = append(toolCalls, ToolCall{ID: currentToolID, Type: "function", Function: struct{Name string "json:\"name\""; Arguments string "json:\"arguments\""}{Name: currentToolName, Arguments: currentToolArgs}})
 	}
-
 	return fullContent, toolCalls, nil
+}
+
+// --- GESTION CONTEXTE & ANALYSE ---
+
+func getSystemPrompt(cwd string) string {
+	// 1. Base Prompt (Orchestrator Rules)
+	p := "You are the Orchestrator Agent. CWD: " + cwd + ".\n" +
+		"PROTOCOL: THOUGHT (Explain plan) > ACTION (Use tool) > OBSERVATION > REPEAT.\n" +
+		"Never use a tool without explaining WHY first in the THOUGHT phase."
+	
+	// 2. agents.md (Mémoire persistante)
+	if data, err := os.ReadFile("agents.md"); err == nil {
+		p += "\n\n=== [agents.md] MEMORY & GUIDELINES ===\n" + string(data)
+	}
+	return p
+}
+
+func analyzeProject() string {
+	files, _ := filepath.Glob("*")
+	var contentBuilder strings.Builder
+	contentBuilder.WriteString("Analyze these project files. Output a clean Markdown list of Coding Guidelines, patterns, and Architecture notes (max 300 words). Do NOT act as an agent, just output the MD content:\n")
+
+	count := 0
+	for _, f := range files {
+		// Exclusion des fichiers binaires, cachés ou mémoire
+		if strings.HasPrefix(f, ".") || f == "nanocode" || f == "agents.md" { continue }
+		info, err := os.Stat(f)
+		if err == nil && !info.IsDir() {
+			data, _ := os.ReadFile(f)
+			if len(data) > 3000 { data = data[:3000] } // Tronque les gros fichiers
+			contentBuilder.WriteString(fmt.Sprintf("\n--- FILE: %s ---\n%s\n", f, string(data)))
+			count++
+		}
+	}
+	
+	if count == 0 { return "No files to analyze." }
+
+	msgs := []Message{{Role: "user", Content: contentBuilder.String()}}
+	fmt.Printf("%s(Analyzing project structure to update agents.md...)%s\n", Yellow, Reset)
+	
+	// On utilise la fonction de stream pour voir l'analyse en direct, et on récupère le texte
+	resp, _, err := callMistralStream(msgs)
+	if err != nil { return "" }
+	return resp
 }
 
 // --- MAIN ---
@@ -198,24 +230,55 @@ func main() {
 	if MistralKey == "" { fmt.Printf("%sErreur: MISTRAL_API_KEY manquante.%s\n", Red, Reset); return }
 	
 	cwd, _ := os.Getwd()
-	fmt.Printf("%snanocode-stream%s | %s%s%s\n\n", Bold, Reset, Dim, CurrentModel, Reset)
-
-	sysPrompt := "You are a coding assistant. CWD: " + cwd + ". " +
-		"Use tools to inspect code. AFTER using a tool, you MUST summarize what you found."
+	sysPrompt := getSystemPrompt(cwd)
 	
+	fmt.Printf("%snanocode-v7 (Persistent Memory)%s | %s%s%s\n", Bold, Reset, Dim, CurrentModel, Reset)
+	fmt.Printf("Commands: %s/i%s (Init/Update Memory), %s/c%s (Clear Chat), %s/q%s (Quit)\n\n", Green, Reset, Green, Reset, Green, Reset)
+
 	history := []Message{{Role: "system", Content: sysPrompt}}
 	scanner := bufio.NewScanner(os.Stdin)
 
 	for {
-		// 'Blue' est maintenant défini, plus d'erreur !
 		fmt.Printf("%s%s❯%s ", Bold, Blue, Reset)
 		if !scanner.Scan() { break }
 		input := scanner.Text()
+
 		if input == "/q" { break }
-		if input == "/c" { history = []Message{{Role: "system", Content: sysPrompt}}; fmt.Printf("%sCleaned.%s\n", Green, Reset); continue }
+		
+		// --- COMMANDE /i : ANALYSE ET SAUVEGARDE ---
+		if input == "/i" {
+			guidelines := analyzeProject()
+			if guidelines != "" {
+				header := fmt.Sprintf("\n\n### AUTO-ANALYSIS (%s) ###\n", time.Now().Format("2006-01-02 15:04"))
+				
+				// Ajout à agents.md
+				f, err := os.OpenFile("agents.md", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+				if err == nil {
+					f.WriteString(header + guidelines)
+					f.Close()
+					fmt.Printf("%s[agents.md updated on disk]%s\n", Green, Reset)
+				} else {
+					fmt.Printf("%sError writing agents.md: %v%s\n", Red, err, Reset)
+				}
+
+				// Rechargement immédiat du cerveau
+				sysPrompt = getSystemPrompt(cwd)
+				history = []Message{{Role: "system", Content: sysPrompt}}
+				fmt.Printf("%sContext reloaded from agents.md.%s\n", Green, Reset)
+			}
+			continue
+		}
+
+		if input == "/c" {
+			sysPrompt = getSystemPrompt(cwd) // Relecture fraiche du fichier
+			history = []Message{{Role: "system", Content: sysPrompt}}
+			fmt.Printf("%sCleaned & Memory Reloaded.%s\n", Green, Reset)
+			continue
+		}
 
 		history = append(history, Message{Role: "user", Content: input})
 
+		// --- BOUCLE ORCHESTRATEUR ---
 		for {
 			content, tools, err := callMistralStream(history)
 			if err != nil { fmt.Printf("%sError: %v%s\n", Red, err, Reset); break }
@@ -245,6 +308,7 @@ func main() {
 					
 					history = append(history, Message{Role: "tool", ToolCallID: tool.ID, Name: fname, Content: res})
 				}
+				fmt.Printf("%s(🔄 Orchestrator analyzing result...)%s\n", Yellow, Reset)
 				continue
 			}
 			break
