@@ -23,3 +23,12 @@
 3. **Tool Abstraction**: Abstract tool functionality to allow easy addition or modification of tools.
 4. **User Interaction**: Provide a conversational interface for user interaction and command execution.
 5. **Cross-Platform Support**: Support installation and usage across macOS, Linux, and Windows platforms.
+
+### PDF HANDLING PROTOCOL
+The agent cannot read binary .pdf files directly.
+If the user asks to analyze or read a PDF file (e.g., `doc.pdf`), you MUST follow this strictly:
+
+1. **CONVERT**: Use the `bash` tool to run: `pdftomd doc.pdf doc.md`
+2. **READ**: Use the `read` tool to read the newly created `doc.md` file.
+3. **ANALYZE**: Summarize or analyze the content of the markdown file.
+4. **CLEANUP** (Optional): You may remove the .md file afterwards if requested.
