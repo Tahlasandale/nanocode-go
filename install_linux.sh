@@ -56,7 +56,23 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# --- 5. Add API Key to shell profile ---
+# --- 5. Build and install pdftomd ---
+echo "Building pdftomd executable..."
+go build -o pdftomd pdftomd.go
+if [ $? -ne 0 ]; then
+    echo "Error: Go build failed. Check pdftomd.go for errors."
+    exit 1
+fi
+echo "Build successful."
+
+echo "Moving pdftomd to $INSTALL_PATH (requires sudo)..."
+sudo mv pdftomd $INSTALL_PATH
+if [ $? -ne 0 ]; then
+    echo "Error: Failed to move executable. Check permissions or install path."
+    exit 1
+fi
+
+# --- 6. Add API Key to shell profile ---
 PROFILE_FILE=""
 # Check for Bash (most common on Linux) then Zsh
 if [ -f "$HOME/.bashrc" ]; then
@@ -79,14 +95,14 @@ if [ -n "$PROFILE_FILE" ]; then
         echo "API Key added."
     fi
 
-    # --- 6. Source the profile ---
-    echo "Sourcing $PROFILE_FILE to apply changes to the current session..."
-    source "$PROFILE_FILE" 2>/dev/null || true
+    # --- 7. Source the profile ---
+echo "Sourcing $PROFILE_FILE to apply changes to the current session..."
+source "$PROFILE_FILE" 2>/dev/null || true
 fi
 
-# --- 7. Verification ---
+# --- 8. Verification ---
 echo
 "--- Installation Complete! ---"
-echo "The 'nanocode' command is now installed."
+echo "The 'nanocode' and 'pdftomd' commands are now installed."
 echo "You can start a new terminal session or test it now by running: $EXEC_NAME"
 echo

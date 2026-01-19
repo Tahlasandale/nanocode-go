@@ -68,11 +68,26 @@ setx MISTRAL_API_KEY "$API_KEY" /M
 $env:MISTRAL_API_KEY = $API_KEY
 Write-Host "API Key set." -ForegroundColor Green
 
+# --- 7. Build and install pdftomd ---
+Write-Host "Building pdftomd executable..." -ForegroundColor Yellow
+go build -o pdftomd.exe pdftomd.go
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Error: Go build failed. Check pdftomd.go for errors." -ForegroundColor Red
+    exit 1
+}
+Write-Host "Build successful." -ForegroundColor Green
 
-# --- 7. Verification ---
-Write-Host ""
+Write-Host "Moving pdftomd.exe to $TOOLS_DIR" -ForegroundColor Yellow
+Move-Item -Path pdftomd.exe -Destination $TOOLS_DIR -Force
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Error: Failed to move executable." -ForegroundColor Red
+    exit 1
+}
+
+# --- 8. Verification ---
+Write-Host "" -ForegroundColor Cyan
 Write-Host "--- Installation Complete! ---" -ForegroundColor Cyan
-Write-Host "The 'nanocode' command is now installed." -ForegroundColor Cyan
+Write-Host "The 'nanocode' and 'pdftomd' commands are now installed." -ForegroundColor Cyan
 Write-Host "NOTE: You must open a new PowerShell window for the PATH changes to take effect." -ForegroundColor Yellow
 Write-Host "You can test it now in the NEW window by running: $EXEC_NAME" -ForegroundColor Cyan
-Write-Host ""
+Write-Host "" -ForegroundColor Cyan
