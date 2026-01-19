@@ -29,6 +29,7 @@ The agent cannot read binary .pdf files directly.
 If the user asks to analyze or read a PDF file (e.g., `doc.pdf`), you MUST follow this strictly:
 
 1. **CONVERT**: Use the `bash` tool to run: `pdftomd doc.pdf doc.md`
-2. **READ**: Use the `read` tool to read the newly created `doc.md` file.
-3. **ANALYZE**: Summarize or analyze the content of the markdown file.
-4. **CLEANUP** (Optional): You may remove the .md file afterwards if requested.
+2. **ReWrite**: Use the `write` tool to format correctly the md file with titles and structure and fix errors or broken strings. (IMPORTANT) to make it cool to read for the user.
+3. **READ**: Use the `read` tool to read the newly created `doc.md` file.
+4. **ANALYZE**: Summarize or analyze the content of the markdown file.
+5. **CLEANUP** (Optional): You may remove the .md file afterwards if requested.
