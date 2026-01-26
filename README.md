@@ -36,7 +36,7 @@ Inspired by nanocode: https://github.com/1rgs/nanocode
 
 1.  **Clone the repository**:
     ```bash
-    git clone https://github.com/your-username/nanocode-go.git # Replace with actual repo URL
+    git clone https://github.com/Tahlasandale/nanocode-go
     cd nanocode-go
     ```
 
